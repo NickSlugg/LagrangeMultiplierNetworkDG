@@ -12,6 +12,7 @@ from fenicsx_ii import assemble_scalar
 from mesh import GenMesh3D
 
 def Eval1DGraph(N, plotting=False):
+
     comm = MPI.COMM_WORLD
     _, _, graph_nodes, graph_cells = GenMesh3D(2*N, discontinuous=False)
 
@@ -32,7 +33,7 @@ def Eval1DGraph(N, plotting=False):
 
     degree = 1
     V = dolfinx.fem.functionspace(graph_mesh, ("DG", degree))
-    Vtilde = dolfinx.fem.functionspace(graph_mesh, ("DG", 0))
+    Vtilde = dolfinx.fem.functionspace(lm_mesh, ("DG", 0))
     W = ufl.MixedFunctionSpace(*[V, Vtilde])
 
     u, utilde = ufl.TrialFunctions(W)
