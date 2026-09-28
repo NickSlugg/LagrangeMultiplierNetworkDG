@@ -89,7 +89,7 @@ def GenMesh3D(N, discontinuous=True):
         ]
 
         lm_index = np.array([n])
-        boundary_indices = np.array([0, 2*n-1, 3*n])
+        boundary_indices = np.array([0, 3*n-1, 3*n])
 
         return nodes, cells, graph_nodes, graph_cells, cells_edges, lm_index, boundary_indices
 

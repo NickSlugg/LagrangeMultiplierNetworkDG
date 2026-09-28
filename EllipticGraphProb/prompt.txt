@@ -1,0 +1,7 @@
+Let $\Lambda \subseteq R$ be an interval, and let $\mathcal{T}_h$ be a set of elements with width $h$, and let $\mathcal E_h$ be the facets of this mesh. Let $[v]_F$ be the jump of $v$ across $F \in \mathcal{E}_h$. How do I implement the norm 
+%%
+\begin{equation}
+    \Vert v \Vert^2 = \sum_{K \in \mathcal{T}_h} \Vert \nabla v \Vert_{L^2(K)}^2 + \sum_{F \in \mathcal{E}_h} [v]_{F}^2
+\end{equation}
+%%
+in Fencisx?
