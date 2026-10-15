@@ -25,11 +25,14 @@ class GraphProblem:
     _comm: MPI.Intracomm = MPI.COMM_WORLD
 
     # Mesh Data
+    _nodes: npt.NDArray
+    _cells: npt.NDArray
     _graph_nodes: npt.NDArray
     _graph_cells: npt.NDArray
     _cells_edges: List
     _lm_index: npt.NDArray
     _boundary_indices: npt.NDArray
+    _3d_mesh: dolfinx.mesh.Mesh
     _graph_mesh: dolfinx.mesh.Mesh
     _lm_mesh: dolfinx.mesh.Mesh
     _lm_map: dolfinx.mesh.EntityMap
@@ -65,22 +68,30 @@ class GraphProblem:
     def global_graph_mesh(self, N: int):
 
         # Set Graph Data
-        _, _, self._graph_nodes, self._graph_cells, self._cells_edges, self._lm_index, self._boundary_indices = GenMesh3D(2*N)
+        self._nodes, self._cells, self._graph_nodes, self._graph_cells, self._cells_edges, self._lm_index, self._boundary_indices = GenMesh3D(2*N)
+
+        ufl_cube = ufl.Mesh(basix.ufl.element("Lagrange", "hexahedron", 1, shape=(3,)))
+
+        self._3d_mesh = dolfinx.mesh.create_mesh(
+            self._comm,
+            self._cells,
+            ufl_cube,
+            self._nodes
+        )
 
         # Generate global graph mesh
         ufl_int = ufl.Mesh(basix.ufl.element("Lagrange", "interval", 1, shape=(3,)))
 
-        self._graph_mesh = dolfinx.mesh.create_mesh(
-            self._comm,
-            e=ufl_int,
-            cells=self._graph_cells,
-            x=self._graph_nodes,
-        )
+        self._graph_mesh, self._graph_map = dolfinx.mesh.create_submesh(
+            self._3d_mesh,
+            self._3d_mesh.topology.dim - 2,
+            self._graph_nodes
+        )[:2]
 
         # submesh for lagrange multiplier(s)
         self._lm_mesh, self._lm_map = dolfinx.mesh.create_submesh(
-            self._graph_mesh,
-            self._graph_mesh.topology.dim - 1,
+            self._3d_mesh,
+            self._3d_mesh.topology.dim - 3,
             self._lm_index
         )[:2]
 
@@ -295,31 +306,52 @@ class GraphProblem:
 
         squared_norm = 0
         lm_diffs = np.zeros((len(self._edge_meshes),))
-        f_tilde = self._functions[-1]
+        lm_deriv = 0
+        u_tilde = self._functions[-1]
+        u_ex_tilde = u_ex[-1]
         dx_bifurc = ufl.Measure("dx", domain=self._lm_mesh)
-        for i, (f, edge) in enumerate(zip(self._functions[:-1], self._edge_meshes)):
+        for i, (u, edge) in enumerate(zip(self._functions[:-1], self._edge_meshes)):
             dx_edge = ufl.Measure("dx", domain=edge)
             dS_edge = ufl.Measure("dS", domain=edge)
             ds_edge = ufl.Measure("ds", domain=edge, subdomain_data=self._edge_facet_markers[i])
 
+            n_e = ufl.FacetNormal(edge)
             h_e = ufl.CellDiameter(edge)
             h_e_avg = (h_e("+") + h_e("-"))/2
 
-            squared_int = ufl.inner(f - u_ex[i], f - u_ex[i]) * dx_edge 
-                #+ (self._sigma_edge / h_e_avg) * ufl.inner(ufl.jump(f - u_ex[i]), ufl.jump(f - u_ex[i])) * dS_edge \
-                #+ (self._sigma_edge / h_e) * ufl.inner(f - u_ex[i], f - u_ex[i]) * ds_edge(self._boundary_marker) \
-                #+ (self._sigma_bifurc / h_e) * ufl.inner(f - u_ex[i], f - u_ex[i]) * ds_edge(self._bifurc_marker) \
+            J = ufl.Jacobian(edge)
+            tangent = J[:,0]
+            norm_tangent = tangent / ufl.sqrt(ufl.dot(tangent, tangent))
+
+            du_ds = ufl.dot(ufl.grad(u), norm_tangent)
+            du_ex_ds = ufl.dot(ufl.grad(u_ex[i]), norm_tangent)
+
+            squared_int = ufl.inner(du_ds - du_ex_ds, du_ds - du_ex_ds) * dx_edge \
+                + (self._sigma_edge / h_e_avg) * ufl.inner(ufl.jump(u - u_ex[i]), ufl.jump(u - u_ex[i])) * dS_edge \
+                + (self._sigma_edge / h_e) * ufl.inner(u - u_ex[i], u - u_ex[i]) * ds_edge(self._boundary_marker) \
+                #+ (self._sigma_bifurc / h_e) * ufl.inner(u - u_ex[i], u - u_ex[i]) * ds_edge(self._bifurc_marker) \
                 #- 2 * (self._sigma_bifurc / h_e) * ufl.inner(f - u_ex[i], f_tilde - u_ex[-1]) * ds_edge(self._bifurc_marker) \
                 #+ (self._sigma_bifurc / h_e) * ufl.inner(f_tilde - u_ex[-1], f_tilde - u_ex[-1]) * dx_bifurc
+
+            lm_deriv_int = du_ds * ds_edge(self._bifurc_marker)
+            if i > 0:
+                lm_deriv -= assemble_scalar(lm_deriv_int, op=MPI.SUM)
+            else:
+                lm_deriv += assemble_scalar(lm_deriv_int, op=MPI.SUM)
 
             entity_maps = self._edge_entity_maps + [self._lm_map] + self._lm_to_edge_maps
 
             int_form = dolfinx.fem.form(squared_int)
-            #scalar_int = dolfinx.fem.assemble_scalar(dolfinx.fem.form(squared_int))
             squared_norm += assemble_scalar(squared_int, op=MPI.SUM)
-            #lm_diffs[i] = assemble_scalar(lm_form, op=MPI.SUM)
 
-        return np.sqrt(squared_norm)
+            # compute lm component
+            h_cell = edge.h(1, np.array([0]))[0]
+            lm_err = (self._sigma_bifurc / h_cell) * ((u.x.array[-1] - u_ex[i].x.array[-1])-(u_tilde.x.array[0] - u_ex_tilde.x.array[0])) ** 2
+            squared_norm += lm_err
+
+            lm_diffs[i] = np.abs(u_tilde.x.array[-1] - u_ex_tilde.x.array[-1])
+
+        return np.sqrt(squared_norm), lm_deriv
 
     def reset_edges(self):
         self._edge_meshes = []
