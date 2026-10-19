@@ -39,7 +39,7 @@ def GenMesh2D(N):
 def GenMesh3D(N, discontinuous=True):
     m = N+1
     n = N // 2
-    x_pts, y_pts, z_pts = np.meshgrid(np.linspace(-1, 1, m), np.linspace(-1, 1, m), np.linspace(0, 2, m))
+    x_pts, y_pts, z_pts = np.meshgrid(np.linspace(0, 2, m), np.linspace(-1, 1, m), np.linspace(-1, 1, m))
     nodes = np.stack([x_pts, y_pts, z_pts], axis=-1).reshape(-1, 3)
     nodes = np.flip(nodes, axis=1)
 
@@ -80,8 +80,8 @@ def GenMesh3D(N, discontinuous=True):
             graph_cells[2*n:],
         ]
 
-        lm_index = np.array([n]) + n * (m ** 2)
-        boundary_indices = np.array([0, 3*n-1, 3*n]) + n * (m ** 2)
+        lm_index = np.array([n])
+        boundary_indices = np.array([0, 3*n-1, 3*n])
 
         return nodes, cells, graph_nodes, graph_cells, cells_edges, lm_index, boundary_indices
 
