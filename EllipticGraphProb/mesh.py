@@ -87,6 +87,58 @@ def GenMesh3D(N, discontinuous=True):
 
     return nodes, cells, graph_nodes, graph_cells
 
+
+def GenMesh3DPerp(N, discontinuous=True):
+    m = N+1
+    n = N // 2
+    x_pts, y_pts, z_pts = np.meshgrid(np.linspace(0, 2, m), np.linspace(-1, 1, m), np.linspace(-1, 1, m))
+    nodes = np.stack([x_pts, y_pts, z_pts], axis=-1).reshape(-1, 3)
+    nodes = np.flip(nodes, axis=1)
+
+    cells = np.zeros((N**3, 8))
+    for i in range(N):
+        for j in range(N):
+            for k in range(N):
+                cells[i + N * j + (N ** 2) * k] = np.array(
+                    [0, 1, m**2, m**2 + 1, m, m + 1, m**2 + m, m**2 + m + 1]
+                ) + i + m * j + (m ** 2) * k
+
+    nodes = nodes.astype(np.float64)
+    cells = cells.astype(np.int32)
+
+    nodes1dindices = np.zeros((3 * (n + 1)  - 2,))
+
+    nodes1dindices[:n+1] = m * np.arange(n+1) + n 
+    nodes1dindices[n+1:2*n+1] = (n+1) * N - np.arange(1, n+1) 
+    nodes1dindices[2*n+1:] = (n+1) * N + np.arange(1, n+1) 
+
+    nodes1dindices += n * m ** 2
+
+    graph_nodes = nodes[nodes1dindices.astype(np.int32)]
+
+    graph_cells = np.repeat(np.arange(3*n+1), 2)[1:-1].reshape(3*n, 2)
+    graph_cells[2*n, 0] = n
+
+    if discontinuous:
+        edges = []
+        #    nodes[nodes1dindices[:n+1].astype(np.int32)],
+        #    nodes[nodes1dindices[n:2*n+1].astype(np.int32)],
+        #    nodes[nodes1dindices[np.concatenate([nodes1dindices[n]], nodes1dindices[2*n+1:]).astype(np.int32)]]
+        #]
+
+        cells_edges = [
+            graph_cells[:n],
+            graph_cells[n:2*n],
+            graph_cells[2*n:],
+        ]
+
+        lm_index = np.array([n])
+        boundary_indices = np.array([0, 3*n-1, 3*n])
+
+        return nodes, cells, graph_nodes, graph_cells, cells_edges, lm_index, boundary_indices
+
+    return nodes, cells, graph_nodes, graph_cells
+
 if __name__ == "__main__":
 
     np.set_printoptions(threshold=np.inf)

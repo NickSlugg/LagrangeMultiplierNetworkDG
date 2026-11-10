@@ -118,7 +118,6 @@ class GraphProblem:
         cell_indices.append(2*cells_array + num_cells_in_edge)
         cell_indices.append(2*cells_array + 1 + num_cells_in_edge)
 
-
         for i in range(len(self._cells_edges)):
 
             edge_mesh, edge_map, vertex_map = dolfinx.mesh.create_submesh(
@@ -155,10 +154,11 @@ class GraphProblem:
             lagrange_variant=basix.LagrangeVariant.equispaced,
         )
 
+        self._3d_space = dolfinx.fem.functionspace(self._3d_mesh, ("DG", 1))
         self._edge_spaces = [dolfinx.fem.functionspace(edge_mesh, edge_element) for edge_mesh in self._edge_meshes]
         self._lm_space = dolfinx.fem.functionspace(self._lm_mesh, ("DG", 0))
 
-        self._function_spaces = ufl.MixedFunctionSpace(*[*self._edge_spaces, self._lm_space])
+        self._function_spaces = ufl.MixedFunctionSpace(*[self._3d_space, *self._edge_spaces, self._lm_space])
 
         self._trial_fun = ufl.TrialFunctions(self._function_spaces)
         self._u_e = self._trial_fun[:-1]
@@ -196,8 +196,8 @@ class GraphProblem:
             ufl.ZeroBaseForm((ui,)) for ui in self._test_fun
         ]
 
+        dx = ufl.Measure()
 
-        dS_global = ufl.Measure("dS", domain=self._graph_mesh, subdomain_data=self._global_facet_markers)
 
         # Redefine forms to ensure they are properly categorized
         for i, (edge, facet_marker) in enumerate(zip(self._edge_meshes, self._edge_facet_markers)):
@@ -217,29 +217,29 @@ class GraphProblem:
             n_e = ufl.FacetNormal(edge)
 
             # DG Form - Diagonal blocks
-            a[i][i] += ufl.inner(ufl.grad(self._u_e[i]), ufl.grad(self._w_e[i])) * dx_edge
-            a[i][i] -= ufl.inner(ufl.avg(ufl.grad(self._u_e[i])), ufl.jump(self._w_e[i], n_e)) * dS_edge
-            a[i][i] -= ufl.inner(ufl.avg(ufl.grad(self._w_e[i])), ufl.jump(self._u_e[i], n_e)) * dS_edge
-            a[i][i] += (self._sigma_edge / h_e_avg) * ufl.inner(ufl.jump(self._u_e[i], n_e), ufl.jump(self._w_e[i], n_e)) * dS_edge
-            a[i][i] -= ufl.inner(ufl.grad(self._u_e[i]), ufl.outer(self._w_e[i], n_e)) * ds_edge(self._boundary_marker)
-            a[i][i] -= ufl.inner(ufl.grad(self._w_e[i]), ufl.outer(self._u_e[i], n_e)) * ds_edge(self._boundary_marker)
-            a[i][i] += (self._sigma_edge / h_e) * ufl.inner(self._u_e[i], self._w_e[i]) * ds_edge(self._boundary_marker)
+            a[i+1][i+1] += ufl.inner(ufl.grad(self._u_e[i]), ufl.grad(self._w_e[i])) * dx_edge
+            a[i+1][i+1] -= ufl.inner(ufl.avg(ufl.grad(self._u_e[i])), ufl.jump(self._w_e[i], n_e)) * dS_edge
+            a[i+1][i+1] -= ufl.inner(ufl.avg(ufl.grad(self._w_e[i])), ufl.jump(self._u_e[i], n_e)) * dS_edge
+            a[i+1][i+1] += (self._sigma_edge / h_e_avg) * ufl.inner(ufl.jump(self._u_e[i], n_e), ufl.jump(self._w_e[i], n_e)) * dS_edge
+            a[i+1][i+1] -= ufl.inner(ufl.grad(self._u_e[i]), ufl.outer(self._w_e[i], n_e)) * ds_edge(self._boundary_marker)
+            a[i+1][i+1] -= ufl.inner(ufl.grad(self._w_e[i]), ufl.outer(self._u_e[i], n_e)) * ds_edge(self._boundary_marker)
+            a[i+1][i+1] += (self._sigma_edge / h_e) * ufl.inner(self._u_e[i], self._w_e[i]) * ds_edge(self._boundary_marker)
 
             # RHS Form
-            L[i] += ufl.inner(self._w_e[i], self._f_edges[i]) * dx_edge
-            L[i] -= ufl.inner(ufl.grad(self._w_e[i]), ufl.outer(self._u_ex_edges[i], n_e)) * ds_edge(self._boundary_marker)
-            L[i] += (self._sigma_edge / h_e) * ufl.inner(self._u_ex_edges[i], self._w_e[i]) * ds_edge(self._boundary_marker)
+            L[i+1] += ufl.inner(self._w_e[i], self._f_edges[i]) * dx_edge
+            L[i+1] -= ufl.inner(ufl.grad(self._w_e[i]), ufl.outer(self._u_ex_edges[i], n_e)) * ds_edge(self._boundary_marker)
+            L[i+1] += (self._sigma_edge / h_e) * ufl.inner(self._u_ex_edges[i], self._w_e[i]) * ds_edge(self._boundary_marker)
 
             # Bifurcation node coupling
-            a[i][i] += ufl.inner(ufl.grad(self._u_e[i]), ufl.outer(self._w_e[i], n_e)) * ds_edge(self._bifurc_marker)
-            a[i][i] += ufl.inner(ufl.grad(self._w_e[i]), ufl.outer(self._u_e[i], n_e)) * ds_edge(self._bifurc_marker)
-            a[i][i] += (self._sigma_bifurc / h_e) * ufl.inner(self._u_e[i], self._w_e[i]) * ds_edge(self._bifurc_marker)
+            a[i+1][i+1] += ufl.inner(ufl.grad(self._u_e[i]), ufl.outer(self._w_e[i], n_e)) * ds_edge(self._bifurc_marker)
+            a[i+1][i+1] += ufl.inner(ufl.grad(self._w_e[i]), ufl.outer(self._u_e[i], n_e)) * ds_edge(self._bifurc_marker)
+            a[i+1][i+1] += (self._sigma_bifurc / h_e) * ufl.inner(self._u_e[i], self._w_e[i]) * ds_edge(self._bifurc_marker)
 
-            a[-1][i] -= ufl.inner(ufl.grad(self._u_e[i]), ufl.outer(self._w_tilde, n_e)) * ds_edge(self._bifurc_marker)
-            a[i][-1] -= ufl.inner(ufl.grad(self._w_e[i]), ufl.outer(self._u_tilde, n_e)) * ds_edge(self._bifurc_marker)
+            a[-1][i+1] -= ufl.inner(ufl.grad(self._u_e[i]), ufl.outer(self._w_tilde, n_e)) * ds_edge(self._bifurc_marker)
+            a[i+1][-1] -= ufl.inner(ufl.grad(self._w_e[i]), ufl.outer(self._u_tilde, n_e)) * ds_edge(self._bifurc_marker)
 
-            a[-1][i] -= (self._sigma_bifurc / h_e) * ufl.inner(self._u_e[i], self._w_tilde) * ds_edge(self._bifurc_marker)
-            a[i][-1] -= (self._sigma_bifurc / h_e) * ufl.inner(self._w_e[i], self._u_tilde) * ds_edge(self._bifurc_marker)
+            a[-1][i+1] -= (self._sigma_bifurc / h_e) * ufl.inner(self._u_e[i], self._w_tilde) * ds_edge(self._bifurc_marker)
+            a[i+1][-1] -= (self._sigma_bifurc / h_e) * ufl.inner(self._w_e[i], self._u_tilde) * ds_edge(self._bifurc_marker)
 
             # Use h_e_val (the scalar float) here instead of the UFL object h_e
             a[-1][-1] += (self._sigma_bifurc / h_e_val) * self._u_tilde * self._w_tilde * dx_bifurc

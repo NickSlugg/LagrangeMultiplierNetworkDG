@@ -157,6 +157,7 @@ class Mesh3D1D:
             )
 
     def create_lm_maps(self):
+        print(len(self._edge_vertex_maps))
         for i, vertex_map in enumerate(self._edge_vertex_maps):
             lm_graph_indices = self._lm_map.sub_topology_to_topology(np.array([self._lm_indices[i]]), inverse=False)
             lm_to_edge = vertex_map.sub_topology_to_topology(lm_graph_indices, inverse=True)
