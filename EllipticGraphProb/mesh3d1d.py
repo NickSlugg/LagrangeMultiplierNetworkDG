@@ -125,6 +125,14 @@ class Mesh3D1D:
         self._parent_vertex_marker[self._global_facet_markers.indices] = self._global_facet_markers.values
 
     def graph_mesh_edges(self):
+
+        # clear variables
+        self._edge_meshes = []
+        self._edge_entity_maps = []
+        self._edge_vertex_maps = []
+        self._edge_facet_markers = []
+        self._lm_to_edge_maps = []
+
         for i in range(len(self._cell_indices)):
 
             # create mesh for given edge
@@ -157,7 +165,6 @@ class Mesh3D1D:
             )
 
     def create_lm_maps(self):
-        print(len(self._edge_vertex_maps))
         for i, vertex_map in enumerate(self._edge_vertex_maps):
             lm_graph_indices = self._lm_map.sub_topology_to_topology(np.array([self._lm_indices[i]]), inverse=False)
             lm_to_edge = vertex_map.sub_topology_to_topology(lm_graph_indices, inverse=True)
